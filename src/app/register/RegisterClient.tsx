@@ -15,11 +15,12 @@ export default function RegisterClient() {
     type: ModalType
     title: string
     message: string
+    needsVerification?: boolean
   }>({
     isOpen: false,
     type: 'loading',
     title: '',
-    message: ''
+    message: '',
   })
 
   const [pendingFormData, setPendingFormData] = useState<FormData | null>(null)
@@ -35,7 +36,7 @@ export default function RegisterClient() {
       isOpen: true,
       type: 'confirm',
       title: 'Konfirmasi Pendaftaran',
-      message: 'Pastikan data yang kamu masukkan sudah benar.'
+      message: 'Pastikan data yang kamu masukkan sudah benar.',
     })
   }
 
@@ -46,7 +47,7 @@ export default function RegisterClient() {
       isOpen: true,
       type: 'loading',
       title: 'Memproses...',
-      message: 'Sedang membuat akun barumu di server.'
+      message: 'Sedang membuat akun barumu di server.',
     })
 
     startTransition(async () => {
@@ -57,14 +58,29 @@ export default function RegisterClient() {
           isOpen: true,
           type: 'error',
           title: 'Gagal Mendaftar',
-          message: result.error
+          message: result.error,
         })
-      } else if (result?.success) {
+        return
+      }
+
+      if (result?.needsVerification) {
+        // Email confirmation aktif di Supabase
+        setModalState({
+          isOpen: true,
+          type: 'success',
+          title: 'Cek Emailmu!',
+          message:
+            'Link verifikasi sudah dikirim ke emailmu. Klik link tersebut untuk mengaktifkan akun, lalu kamu bisa langsung masuk.',
+          needsVerification: true,
+        })
+      } else {
+        // Langsung aktif (email confirm dimatikan)
         setModalState({
           isOpen: true,
           type: 'success',
           title: 'Berhasil Mendaftar!',
-          message: 'Akunmu berhasil dibuat. Irasshaimase!'
+          message: 'Akunmu berhasil dibuat. Irasshaimase!',
+          needsVerification: false,
         })
       }
     })
@@ -72,13 +88,17 @@ export default function RegisterClient() {
 
   const handleSuccessOK = () => {
     closeModal()
-    router.replace('/')
+    if (modalState.needsVerification) {
+      // Arahkan ke login, user harus verifikasi email dulu
+      router.replace('/login')
+    } else {
+      router.replace('/')
+    }
   }
 
   return (
     <div className="relative flex flex-col min-h-screen items-center justify-center w-full overflow-hidden px-4 pb-16 pt-24">
 
-      {/* Modal Eksternal */}
       <Modal
         isOpen={modalState.isOpen}
         type={modalState.type}
@@ -91,25 +111,22 @@ export default function RegisterClient() {
         }
       />
 
-      {/* ─── Background & Thematic Elements ─── */}
+      {/* Background */}
       <div aria-hidden className="pointer-events-none absolute inset-0 bg-background" />
       <div aria-hidden className="pointer-events-none absolute inset-0 hero-mesh opacity-80" />
 
-      {/* Giant Typography Watermarks */}
       <div className="pointer-events-none absolute right-[2%] top-[10%] select-none opacity-10 mix-blend-multiply dark:mix-blend-screen dark:opacity-20">
         <span className="text-[16rem] font-black leading-none" style={{ writingMode: 'vertical-rl' }}>
           新規
         </span>
       </div>
       <div className="pointer-events-none absolute left-[5%] bottom-[15%] select-none opacity-10 mix-blend-multiply dark:mix-blend-screen dark:opacity-20">
-        <span className="text-[16rem] font-black leading-none tracking-tighter">
-          IDN
-        </span>
+        <span className="text-[16rem] font-black leading-none tracking-tighter">IDN</span>
       </div>
 
       <div className="pointer-events-none absolute top-10 left-1/2 h-[40rem] w-[40rem] -translate-x-1/2 rounded-full bg-gradient-to-b from-gold-500/20 to-transparent blur-3xl dark:from-gold-500/30" />
 
-      {/* ─── Card Container ─── */}
+      {/* Card */}
       <div className="relative w-full max-w-md animate-scale-in z-10 mt-4">
         <div className="absolute -top-1 left-4 right-4 h-2 rounded-t-full bg-gradient-to-r from-gold-400 via-gold-500 to-yellow-600 opacity-80 blur-[2px]" />
 
@@ -137,13 +154,16 @@ export default function RegisterClient() {
           </div>
 
           <form onSubmit={handleFormSubmit} className="flex flex-col gap-5">
+            {/* Full Name */}
             <div className="flex flex-col gap-1.5">
               <label htmlFor="register-fullname" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Nama Lengkap
               </label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-muted-foreground">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
                 </div>
                 <input
                   id="register-fullname"
@@ -157,13 +177,16 @@ export default function RegisterClient() {
               </div>
             </div>
 
+            {/* Email */}
             <div className="flex flex-col gap-1.5">
               <label htmlFor="register-email" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Alamat Email
               </label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-muted-foreground">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" /></svg>
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                  </svg>
                 </div>
                 <input
                   id="register-email"
@@ -177,13 +200,16 @@ export default function RegisterClient() {
               </div>
             </div>
 
+            {/* Password */}
             <div className="flex flex-col gap-1.5">
               <label htmlFor="register-password" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                 Kata Sandi Baru
               </label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-muted-foreground">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
                 </div>
                 <input
                   id="register-password"

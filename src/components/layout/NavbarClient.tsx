@@ -8,6 +8,7 @@ import { createClient } from '@/utils/supabase/client';
 interface NavbarClientProps {
   isLoggedIn: boolean;
   userFullName: string | null;
+  isAdmin: boolean; // ← baru
 }
 
 const NAV_LINKS = [
@@ -15,54 +16,59 @@ const NAV_LINKS = [
   { href: '/orders', label: 'Pesanan Saya' },
 ];
 
-export function NavbarClient({ isLoggedIn, userFullName }: NavbarClientProps) {
+export function NavbarClient({ isLoggedIn, userFullName, isAdmin }: NavbarClientProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
-
-  // Gunakan local state agar bisa langsung di-override oleh client sebelum router.refresh() selesai
   const [actualIsLoggedIn, setActualIsLoggedIn] = useState(isLoggedIn);
   const [actualFullName, setActualFullName] = useState(userFullName);
+  const [actualIsAdmin, setActualIsAdmin] = useState(isAdmin);
 
-  // Jika server props berubah (misal pindah halaman non-cache), update state lokal
   useEffect(() => {
     setActualIsLoggedIn(isLoggedIn);
     setActualFullName(userFullName);
-  }, [isLoggedIn, userFullName]);
+    setActualIsAdmin(isAdmin);
+  }, [isLoggedIn, userFullName, isAdmin]);
 
-  // Sync state login ketika navigasi history (Back/Forward Cache)
+  // Sync pada navigasi BFCache / history pop
   useEffect(() => {
     const supabase = createClient();
-    
-    // Cek sesi langsung saat mount
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!!user !== actualIsLoggedIn) {
-        setActualIsLoggedIn(!!user);
-        if (!user) setActualFullName(null);
-        router.refresh(); // Tetap panggil agar server RSC lainnya update
-      }
-    });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      const isCurrentlyLoggedIn = !!session;
-      if (isCurrentlyLoggedIn !== actualIsLoggedIn) {
-        setActualIsLoggedIn(isCurrentlyLoggedIn);
-        if (isCurrentlyLoggedIn && session?.user) {
-          const { data } = await supabase.from('profiles').select('full_name').eq('id', session.user.id).single();
-          setActualFullName(data?.full_name ?? null);
-        } else {
-          setActualFullName(null);
-        }
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      const loggedIn = !!user;
+      if (loggedIn !== actualIsLoggedIn) {
+        setActualIsLoggedIn(loggedIn);
+        setActualIsAdmin(user?.user_metadata?.role === 'admin');
+        if (!user) setActualFullName(null);
         router.refresh();
       }
     });
 
-    return () => {
-      subscription.unsubscribe();
-    };
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const loggedIn = !!session;
+        if (loggedIn !== actualIsLoggedIn) {
+          setActualIsLoggedIn(loggedIn);
+          if (loggedIn && session?.user) {
+            const role = session.user.user_metadata?.role;
+            setActualIsAdmin(role === 'admin');
+            const { data } = await supabase
+              .from('profiles')
+              .select('full_name')
+              .eq('id', session.user.id)
+              .single();
+            setActualFullName(data?.full_name ?? null);
+          } else {
+            setActualIsAdmin(false);
+            setActualFullName(null);
+          }
+          router.refresh();
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
   }, [actualIsLoggedIn, router]);
 
   useEffect(() => {
@@ -71,27 +77,20 @@ export function NavbarClient({ isLoggedIn, userFullName }: NavbarClientProps) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Tutup menu saat navigasi
-  useEffect(() => {
-    setIsMenuOpen(false);
-  }, [pathname]);
+  useEffect(() => { setIsMenuOpen(false); }, [pathname]);
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-        isScrolled
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${isScrolled
           ? 'bg-background/70 backdrop-blur-2xl border-b border-border/50 shadow-sm shadow-foreground/5 py-1'
           : 'bg-gradient-to-b from-background/80 to-transparent py-2'
-      }`}
+        }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-14 items-center justify-between">
+
           {/* Logo */}
-          <Link
-            href="/"
-            className="flex items-center gap-2 group"
-            aria-label="Nihong Finds - Halaman Utama"
-          >
+          <Link href="/" className="flex items-center gap-2 group" aria-label="Nihong Finds - Halaman Utama">
             <div className="flex h-9 w-9 items-center justify-center rounded-[14px] bg-gradient-to-br from-sakura-500 to-sakura-600 shadow-md shadow-sakura-500/20 transition-all duration-300 group-hover:scale-110 group-hover:rotate-3 group-hover:shadow-lg group-hover:shadow-sakura-500/40">
               <span className="text-sm font-black text-white">日</span>
             </div>
@@ -106,11 +105,10 @@ export function NavbarClient({ isLoggedIn, userFullName }: NavbarClientProps) {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`relative px-4 py-2 text-sm font-bold transition-colors duration-200 ${
-                  pathname === link.href
+                className={`relative px-4 py-2 text-sm font-bold transition-colors duration-200 ${pathname === link.href
                     ? 'text-foreground'
                     : 'text-muted-foreground hover:text-foreground hover:bg-foreground/5 rounded-full'
-                }`}
+                  }`}
               >
                 {link.label}
                 {pathname === link.href && (
@@ -118,6 +116,19 @@ export function NavbarClient({ isLoggedIn, userFullName }: NavbarClientProps) {
                 )}
               </Link>
             ))}
+
+            {/* Admin link — hanya tampil jika role === 'admin' */}
+            {actualIsAdmin && (
+              <Link
+                href="/admin/products"
+                className={`relative px-4 py-2 text-sm font-bold transition-colors duration-200 rounded-full ${pathname.startsWith('/admin')
+                    ? 'text-brand-600 bg-brand-50 dark:text-brand-400 dark:bg-brand-900/30'
+                    : 'text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-900/20'
+                  }`}
+              >
+                ⚙ Admin
+              </Link>
+            )}
           </nav>
 
           {/* Desktop Auth */}
@@ -163,12 +174,7 @@ export function NavbarClient({ isLoggedIn, userFullName }: NavbarClientProps) {
             aria-expanded={isMenuOpen}
             aria-controls="mobile-menu"
           >
-            <svg
-              className="h-5 w-5 transition-transform duration-300"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="h-5 w-5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               {isMenuOpen ? (
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
               ) : (
@@ -182,9 +188,8 @@ export function NavbarClient({ isLoggedIn, userFullName }: NavbarClientProps) {
       {/* Mobile Menu */}
       <div
         id="mobile-menu"
-        className={`md:hidden absolute top-full left-0 right-0 border-b border-border bg-background/95 backdrop-blur-2xl shadow-xl transition-all duration-300 overflow-hidden ${
-          isMenuOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
-        }`}
+        className={`md:hidden absolute top-full left-0 right-0 border-b border-border bg-background/95 backdrop-blur-2xl shadow-xl transition-all duration-300 overflow-hidden ${isMenuOpen ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0 pointer-events-none'
+          }`}
         aria-hidden={!isMenuOpen}
       >
         <nav className="flex flex-col gap-2 p-4">
@@ -192,26 +197,48 @@ export function NavbarClient({ isLoggedIn, userFullName }: NavbarClientProps) {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex items-center rounded-2xl px-5 py-3.5 text-sm font-bold transition-all ${
-                pathname === link.href 
-                ? 'bg-sakura-50/50 text-sakura-600 dark:bg-sakura-500/10 dark:text-sakura-400' 
-                : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
-              }`}
+              className={`flex items-center rounded-2xl px-5 py-3.5 text-sm font-bold transition-all ${pathname === link.href
+                  ? 'bg-sakura-50/50 text-sakura-600 dark:bg-sakura-500/10 dark:text-sakura-400'
+                  : 'text-muted-foreground hover:bg-foreground/5 hover:text-foreground'
+                }`}
             >
               {link.label}
             </Link>
           ))}
-          
+
+          {/* Admin link mobile */}
+          {actualIsAdmin && (
+            <Link
+              href="/admin/products"
+              className={`flex items-center rounded-2xl px-5 py-3.5 text-sm font-bold transition-all ${pathname.startsWith('/admin')
+                  ? 'bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-400'
+                  : 'text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-900/20'
+                }`}
+            >
+              ⚙ Admin Panel
+            </Link>
+          )}
+
           <div className="mt-4 border-t border-border pt-4 flex flex-col gap-3">
             {actualIsLoggedIn ? (
-              <form action="/auth/signout" method="post">
-                <button
-                  type="submit"
-                  className="w-full rounded-2xl border border-destructive/20 bg-destructive/5 px-5 py-3.5 text-sm font-bold text-destructive transition-all hover:bg-destructive/10 active:scale-95"
-                >
-                  Keluar Akun
-                </button>
-              </form>
+              <>
+                <p className="px-5 text-xs text-muted-foreground">
+                  Login sebagai <span className="font-bold text-foreground">{actualFullName ?? 'User'}</span>
+                  {actualIsAdmin && (
+                    <span className="ml-2 rounded-full bg-brand-100 px-2 py-0.5 text-[10px] font-black text-brand-700 dark:bg-brand-900/30 dark:text-brand-300">
+                      ADMIN
+                    </span>
+                  )}
+                </p>
+                <form action="/auth/signout" method="post">
+                  <button
+                    type="submit"
+                    className="w-full rounded-2xl border border-destructive/20 bg-destructive/5 px-5 py-3.5 text-sm font-bold text-destructive transition-all hover:bg-destructive/10 active:scale-95"
+                  >
+                    Keluar Akun
+                  </button>
+                </form>
+              </>
             ) : (
               <>
                 <Link
